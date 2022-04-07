@@ -11,4 +11,4 @@ Please make sure that this file exists in the same directory when you run comman
 
 See more in main.cpp.
 
-Please use the command "g++ LowMC.cpp LowMC.h main.cpp -03 -std=c++11" to compile the code and make sure that all the files are in the same directory.
+Please use the command "g++ LowMC.cpp LowMC.h main.cpp -O3 -std=c++11" to compile the code and make sure that all the files are in the same directory.
