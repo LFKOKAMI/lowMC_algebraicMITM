@@ -35,7 +35,7 @@ private:
 	M* IL;
 	M* KF;
 	M* IKF;
-	M WK;//whitening key
+	//M WK;//whitening key
 	M H1, Q1, GammaTr;
 	M PP0, QQ1;
 	vector<vector<unsigned long long>> DH;
@@ -49,18 +49,16 @@ public:
 
 	//used for the algebraic attacks
 	void findInputDifference(bool x[]);
-	void constructPQ(bool x[]);
+	
 	void enumerateDiffForwards(bool x[]);
 	void forwards(int current, int total, vector<vector<bool>> &Dh, vector<bool> &u, vector<vector<bool> >& nonlin, vector<vector<bool> >& lin);
-	void storeSolutions(vector<vector<int>>& Dh,M& h0, M& h1, M& p1, vector <bool>& cbit);
-	int onlineCheck(vector<vector<int> > & Dh, M& h1, M& q1, M& gammaTr, vector<bool>& ga);
 	void enumerateDiffBackwards(bool x[]);
 	void backwards(unsigned int cnt[],int current, int total, vector<vector<bool> >& nonlin, vector<vector<bool> >& lin);
 
-	void constructPQNewWay(bool x[]);
-	void storeSolutionsNewWay(vector<vector<unsigned long long>>& Dh, M& P0P, vector <bool>& cbit);
-	int onlineCheckNewWay(vector<vector<unsigned long long>>& Dh, M& Q1, M& P0, vector<bool>& ga);
-	bool checkCorrectness(vector<bool>& gamma, vector<bool>& alpha, vector<bool>& u,int rounds,int total);
+	void constructPQ(bool x[]);
+	void storeSolutions(vector<vector<unsigned long long>>& Dh, M& P0P, vector <bool>& cbit);
+	int onlineCheck(vector<vector<unsigned long long>>& Dh, M& Q1, M& P0, vector<bool>& ga);
+	//bool checkCorrectness(vector<bool>& gamma, vector<bool>& alpha, vector<bool>& u,int rounds,int total);
 
 	//key recovery
 	void keyRecovery(bool key[], bool c[], int r, vector<vector<bool> >& LOut, vector<vector<bool> >& SOut, vector<vector<bool> >& sOut, vector<vector<bool> > lOut);
