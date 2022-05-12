@@ -41,11 +41,16 @@ void testSuccessRate() {
 
 	srand(time(NULL));
 	int success = 0;
-	int CNT = 10000;
+	int CNT = 1000;
+
+	std::mt19937 mt;         
+	std::random_device rnd; 
+	mt.seed(rnd());
+
 	for (int i = 0; i < CNT; i++) {
 		for (int i = 0; i < N / 16; i++) {
 			unsigned int v0 = 0, v1 = 0;
-			v0 = rand(), v1 = rand();
+			v0 = mt(), v1 = mt();
 			//v0 = 0xffff, v1 = 0xffff;
 			//v0 = 0xffff, v1 = 0;
 			for (int j = 0; j < 16; j++) {
@@ -166,25 +171,28 @@ void computeDh() {
 	lowmc.enumerateDiffForwards(x);
 }
 
-void onlineNewWay() {
+void online() {
 	//offline
 	LowMC lowmc;
 	bool x0[N] = {
 		1,0,1,1,1,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1,1,1,0,1,1,1,1,0,1,0,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,0,1,0,0,1,0,1,0,0,0,0,0,1,1,1,0,1,0,1,0,1,1,1,1,0,0,1,1,1,0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0,1,1,1,0,0,1,1,1,0,0,0,0,1,0,1,0,0,1,0,0,1,0,0,0,0,1,0,1,1,0,1,1,0,1,1,
 	};
-	lowmc.constructPQNewWay(x0);
+	lowmc.constructPQ(x0);
 	//online
+
 	bool x1[N] = {
 		0,1,1,1,1,0,0,1,1,1,1,0,1,1,1,0,1,1,0,1,0,1,0,0,1,1,0,1,1,0,0,1,0,1,0,1,0,1,1,0,0,0,1,1,1,1,0,1,1,1,0,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,0,1,0,0,0,1,0,1,1,1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,0,0,0,1,0,1,0,0,1,0,0,0,1,0,1,0,0,1,0,1,0,0,1,1,0,1,0,0,
 	};
+
+	/*
+	srand(time(NULL));
+	for (int i = 0; i < N; i++) {
+		x1[i] = rand() % 2;
+	*/
 	lowmc.enumerateDiffBackwards(x1);
 }
 
 int main() {
-	//testSuccessRate();
-	//computeDh();
-	//onlineNewWay();
-
 	int cmd = 0;
 	while (1) {
 		cout << endl;
@@ -203,7 +211,7 @@ int main() {
 			computeDh();
 		}
 		else if (cmd == 2) {
-			onlineNewWay();
+			online();
 		}
 		else if (cmd == 3) {
 			testSuccessRate();
