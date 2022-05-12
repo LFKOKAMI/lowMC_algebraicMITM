@@ -3,12 +3,15 @@
 #include <fstream>
 #include <vector>
 #include <cstring>
+
+#include <random>
+#include <ctime>
 using namespace std;
 
 LowMC::LowMC() {
 	L = new M[R];
 	IL = new M[R];
-	KF = new M[R];
+	KF = new M[R+1];
 	CONS.resize(R);
 	for (int i = 0; i < R; i++) {
 		CONS[i].resize(N);
@@ -57,11 +60,6 @@ LowMC::~LowMC() {
 	delete[]L;
 	delete[]IL;
 	delete[]KF;
-
-	for (int i = 0; i < 0x800000; i++) {
-		DH[i].clear();
-	}
-	DH.clear();
 }
 
 void LowMC::initializePars(string filename,bool isKey,M* mat) {
@@ -72,16 +70,7 @@ void LowMC::initializePars(string filename,bool isKey,M* mat) {
 	for (int i = 0; i < length; i++) {
 		for (int j = 0; j < N; j++) {
 			for (int k = 0; k < N; k++) {
-				if (isKey && i == 0) {
-					//initialize WK
-					in >> WK.ma[j][k];
-				}
-				else if(isKey && i>0){
-					in >> mat[i - 1].ma[j][k];
-				}
-				else {
-					in >> mat[i].ma[j][k];
-				}
+				in >> mat[i].ma[j][k];
 			}
 		}
 	}
@@ -304,8 +293,12 @@ void LowMC::enumerateDiffBackwards(bool x[]) {
 
 	unsigned int cnt[2] = { 0,0 };
 	backwards(cnt,current, total, nonlin, lin);
-	//cout << hex << "cnt:" << cnt[0]<<" "<<cnt[1] << endl;
 	cout << hex << "time complexity: 0x" << cnt[1] << endl;
+
+	for (int i = 0; i < 0x800000; i++) {
+		DH[i].clear();
+	}
+	DH.clear();
 }
 
 void LowMC::backwards(unsigned int cnt[], int current, int total, vector<vector<bool> >& nonlin, vector<vector<bool> >& lin) {
@@ -315,21 +308,7 @@ void LowMC::backwards(unsigned int cnt[], int current, int total, vector<vector<
 		//record the output differences of the S-box (gamma): gamma=lin[current]
 		vector<bool> gamma(N);
 		matrixMul(IL[r - current], lin[current], gamma);
-		//cnt[1]+=onlineCheck(DH, H1, Q1, GammaTr, gamma);
-		cnt[1] += onlineCheckNewWay(DH,QQ1,PP0,gamma);
-		/*bool checkG[128] = {
-		0,1,1,1,0,0,0,1,1,0,1,1,1,1,0,0,1,0,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,0,1,1,1,0,0,1,0,0,1,1,0,0,1,0,0,1,0,0,1,1,1,0,1,0,1,1,0,0,1,0,1,0,1,1,1,1,0,1,1,0,1,1,1,0,0,1,1,0,1,1,0,1,1,0,0,1,1,1,0,1,0,1,1,0,0,1,0,0,0,1,1,0,0,1,0,1,1,1,1,0,1,0,
-		};
-		bool find = true;
-		for (int i = 3; i < 128; i++) {
-			if (checkG[i] != gamma[i]) {
-				find = false;
-				break;
-			}
-		}
-		if (find) {
-			cout << "find" << endl;
-		}*/
+		cnt[1] += onlineCheck(DH,QQ1,PP0,gamma);
 		if (cnt[0] % 0x10000==0) {
 			cout << hex << cnt[0] << endl;
 		}
@@ -360,388 +339,8 @@ void LowMC::backwards(unsigned int cnt[], int current, int total, vector<vector<
 /*
 x[] is the state difference \Delta_{r0}
 */
+
 void LowMC::constructPQ(bool x[]) {
-	int r0 = 42;
-	int r1 = 48;
-	int r2 = 13;
-	int l = 47;//r1=48, l=r1-1=47
-	//construct a coefficient matrix of size, whose #row is D
-	M m;
-	m.r = N, m.c = 3 * l + 1;//m.c=142
-	clearMatrix(m);
-
-	//initialize the last column of m
-	for (int i = 0; i < N; i++) {
-		m.ma[i][m.c - 1] = x[i];
-	}
-
-	int cnt = 0;//counter for the variables
-	for (int i = 0; i < l; i++) {
-		//replace equations with new variables
-		for (int j = 0; j < 3 * P; j++) {
-			for (int k = 0; k < cnt; k++) {//first clear
-				m.ma[j][k] = 0;
-			}
-			m.ma[j][cnt] = 1;//replace with a new variable v[cnt];
-			m.ma[j][m.c - 1] = 0;
-			cnt++;
-		}
-		matrixMul(L[i+r0], m);//linear transform
-	}
-	//outputM(m);
-	//cout << "cnt:" << cnt << endl;
-
-	//we only need the last D rows of m
-	M connectPart;
-	connectPart.r = D;
-	connectPart.c = m.c + connectPart.r;//store an identity matrix, column=270
-	int varNum = m.c - 1;
-	clearMatrix(connectPart);
-	for (int i = 3 * P; i < N; i++) {
-		for (int j = 0; j < m.c; j++) {
-			connectPart.ma[i - 3 * P][j] = m.ma[i][j];
-		}
-		connectPart.ma[i - 3 * P][m.c + i - 3 * P] = 1;
-	}
-
-	//apply gaussian elimination on connectPart
-	gauss(connectPart, varNum);
-	//cout << "after gaussian elimination" << endl;
-	//connectPart.c = connectPart.r;
-	outputM(connectPart);
-	int useful = 0;
-	for (int i = 0; i < connectPart.r; i++) {
-		for (int j = 0; j < D; j++) {
-			if (connectPart.ma[i][j] == 1) {
-				useful++;
-				break;
-			}
-		}
-	}
-	cout << "useful:" << useful << "  expected:" << D << endl;
-
-
-	//further simplify
-	int index = 0;
-	bool find = false;
-	for (int i = 0; i < connectPart.r; i++) {
-		find = false;
-		for (int j = index; j < varNum; j++) {
-			if (connectPart.ma[i][j]) {
-				index = j;
-				find = true;
-				break;
-			}
-		}
-		if (find) {//it is 1 in connectPart[i][index], eliminate 1 above
-			for (int k = 0; k < i; k++) {
-				if (connectPart.ma[k][index]) {//add row[i] to row [k]
-					for (int t = i; t < connectPart.c; t++) {
-						connectPart.ma[k][t] = connectPart.ma[k][t] ^ connectPart.ma[i][t];
-					}
-				}
-			}
-			index++;
-		}
-	}
-	outputM(connectPart);
-
-	//perform the row exchange operation
-	cout << "after the row exchange operation" << endl;
-	M transConnect;
-	transConnect.r = connectPart.r;
-	transConnect.c = connectPart.c;
-	clearMatrix(transConnect);
-	find = false;
-	index = 0;
-	int zeroRow = 0;
-	for (int i = 0; i < D; i++) {
-		find = false;
-		for (int j = i; j < D; j++) {
-			if (connectPart.ma[j][i]==1) {
-				find = true;
-				index = j;
-				break;
-			}
-		}
-		if (find == false) {//record the equation u_i = u_i
-			//cout << i << endl;
-			//transConnect.ma[i][i] = 1;
-			for (int j = 0; j < connectPart.c; j++) {
-				transConnect.ma[i][j] = connectPart.ma[useful+zeroRow][j];
-			}
-			zeroRow++;
-		}
-		else {//copy the k-th row of connect to the i-th row of transConnect
-			for (int j = 0; j < connectPart.c; j++) {
-				transConnect.ma[i][j] = connectPart.ma[index][j];
-			}
-		}
-	}
-	transConnect.c = transConnect.c - transConnect.r;
-	outputM(transConnect);
-
-	int t = 13;
-	M g,h;
-	int omega = D - useful;
-	g.r = 3 * t;
-	g.c = 3 * l - D + omega + 1 + 3*t;
-	h.r = g.r + omega;
-	h.c = g.c + omega;//there are omega additional equations and variables
-	clearMatrix(g);
-	clearMatrix(h);
-	//initialize h (we exploited the feature of transConnect, and this is not the general code)
-	for (int i = 0; i < g.r; i++) {
-		for (int j = useful; j < transConnect.c-1; j++) {//variables
-			h.ma[i][j - useful] = transConnect.ma[i][j];//re-order the free variables
-		}
-		//record the beta variables
-		h.ma[i][i + transConnect.c - 1 - useful] = 1;
-		h.ma[i][h.c - 1] = transConnect.ma[i][transConnect.c - 1];
-	}
-	//the last omega (2) rows of h (the last omega (2) rows of connectPart due to its simplified form)
-	for (int i = 0; i < omega; i++) {
-		for (int j = useful; j < transConnect.c - 1; j++) {//variables
-			h.ma[i+g.r][j - useful] = connectPart.ma[useful+i][j];
-		}
-		//record the beta variables
-		h.ma[i + g.r][i + g.r + transConnect.c - 1 - useful] = 1;
-		h.ma[i + g.r][h.c - 1] = connectPart.ma[useful + i][transConnect.c - 1];
-	}
-	cout << "the h matrix" << endl;
-	outputM(h);
-
-	M connectH;
-	connectH.r = h.r;
-	connectH.c = h.r + h.c;
-	clearMatrix(connectH);
-	for (int i = 0; i < h.r; i++) {
-		for (int j = 0; j < h.c; j++) {
-			connectH.ma[i][j] = h.ma[i][j];
-		}
-		connectH.ma[i][i + h.c] = 1;
-	}
-	cout << "the connectH matrix" << endl;
-	outputM(connectH);
-	//perform the gaussian elimination on h
-	gauss(connectH, h.c - 1);
-	cout << "the connectH matrix after gaussian elimination" << endl;
-	outputM(connectH);
-
-	//further simplify
-	varNum = h.c - 1;
-	index = 0;
-	for (int i = 0; i < connectH.r; i++) {
-		find = false;
-		for (int j = index; j < varNum; j++) {
-			if (connectH.ma[i][j]) {
-				index = j;
-				find = true;
-				break;
-			}
-		}
-		if (find) {//it is 1 in connectH[i][index], eliminate 1 above
-			//cout << "find " << index << endl;
-			for (int k = 0; k < i; k++) {
-				if (connectH.ma[k][index]) {//add row[i] to row [k]
-					for (int t = i; t < connectH.c; t++) {
-						connectH.ma[k][t] = connectH.ma[k][t] ^ connectH.ma[i][t];
-					}
-				}
-			}
-			index++;
-		}
-	}
-	cout << "further simplifying" << endl;
-	outputM(connectH);
-
-	M h0, h1, p1;
-	h0.r = connectH.r, h0.c = omega + 3 * r1 - N;
-	h1.r = connectH.r, h1.c = 3 * t + omega;
-	p1.r = connectH.r, p1.c = 3 * t + omega;
-	clearMatrix(h0), clearMatrix(h1), clearMatrix(p1);
-
-	for (int i = 0; i < connectH.r; i++) {
-		for (int j = 0; j < h0.c; j++) {
-			h0.ma[i][j] = connectH.ma[i][j];
-		}
-		for (int j = h0.c; j < h0.c + h1.c; j++) {
-			h1.ma[i][j - h0.c] = connectH.ma[i][j];
-		}
-		for (int j = h0.c + h1.c+1; j < h0.c + h1.c + 1+ p1.c; j++) {
-			p1.ma[i][j - h0.c - h1.c-1] = connectH.ma[i][j];
-		}
-	}
-
-	cout << "h0:" << endl;
-	outputM(h0);
-	cout << "h1:" << endl;
-	outputM(h1);
-	cout << "p1:" << endl;
-	outputM(p1);
-
-	vector<bool> cbit(connectH.r);//the constant vector
-	for (int i = 0; i < connectH.r; i++) {
-		cbit[i] = connectH.ma[i][h0.c + h1.c];
-	}
-	
-	//test the correctness of the computed matrices
-	//obtained under the choice (p=1111...1, key=1111...1)
-	bool uv[141] = {
-		1,1,0,0,1,1,0,1,0,1,1,0,0,0,0,1,0,1,0,0,1,0,0,0,1,1,1,0,0,0,0,0,0,1,0,1,1,0,1,1,0,1,0,0,1,1,1,1,1,0,1,1,0,1,1,0,0,1,0,0,1,1,0,0,1,1,1,0,0,0,0,0,0,0,1,0,0,1,1,0,1,0,1,0,0,1,1,1,1,0,1,1,0,1,0,1,0,1,1,1,0,0,1,1,1,0,1,0,0,1,0,1,0,1,0,1,0,0,0,0,0,0,0,1,1,0,1,0,1,1,0,1,0,0,0,1,1,0,0,1,0,
-	};
-	bool gamma[125] = {
-		1,0,0,0,1,1,0,1,1,1,1,0,0,1,0,0,1,0,0,1,1,1,1,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0,1,1,0,0,0,1,1,1,0,0,1,0,0,1,1,0,0,1,0,0,1,0,0,1,1,1,0,1,0,1,1,0,0,1,0,1,0,1,1,1,1,0,1,1,0,1,1,1,0,0,1,1,0,1,1,0,1,1,0,0,1,1,1,0,1,0,1,1,0,0,1,0,0,0,1,1,0,0,1,0,1,1,1,1,0,1,0,
-	};
-
-	bool uvres[N];
-	
-	/*m.c = m.c - 1;//remove the constart part
-	matrixMul(m, uv, uvres);
-	m.c = m.c + 1;
-	for (int i = 0; i < N; i++) {
-		uvres[i] = uvres[i]^m.ma[i][m.c-1];
-	}
-	for (int i = 0; i < 125; i++) {
-		cout << (uvres[i + 3] ^ gamma[i]);
-	}
-	cout << endl;*/
-	//the above test is passed
-
-	//get matrix q1
-	M q1;
-	q1.r = useful;
-	q1.c = transConnect.c - useful;
-	for (int i = 0; i < q1.r; i++) {
-		for (int j = useful; j < transConnect.c; j++) {
-			q1.ma[i][j - useful] = transConnect.ma[i][j];
-		}
-	}
-	cout << "q1:" << endl;
-	outputM(q1);
-	//system("pause");
-
-	//00010 01011 00010 011 1
-
-	//check the correctness of transConnect
-	transConnect.c = connectPart.c;
-	M gammaTr;
-	gammaTr.r = N - 3;
-	gammaTr.c = N - 3;
-	for (int i = 0; i < transConnect.r; i++) {
-		for (int j = 0; j < transConnect.r; j++) {
-			gammaTr.ma[i][j] = transConnect.ma[i][m.c + j];
-		}
-	}
-	bool beta[125];
-	matrixMul(gammaTr, gamma, beta);
-	
-	/*transConnect.c = transConnect.c - 1 - transConnect.r;//remove the constart part and the identity matrix
-	matrixMul(transConnect, uv, uvres);
-	transConnect.c = transConnect.c + 1 + transConnect.r;
-	for (int i = 0; i < transConnect.r; i++) {
-		uvres[i] = uvres[i] ^ transConnect.ma[i][m.c-1];
-		cout << (uvres[i] ^ beta[i]);
-	}
-	cout << endl;*/
-	//the correctness of transConnect is verified
-
-	//test the correctness of h, connecth, h0, h1 and p1
-	//for the test, we only need to fucus on the first 3t bits of beta
-	//we also need to focus on the 123th and 124th bit of beta
-	bool rebeta[41];//41=3*t+omega=3*13+2
-	for (int i = 0; i < 39; i++) {
-		rebeta[i] = beta[i];
-	}
-	rebeta[39] = beta[123], rebeta[40] = beta[124];
-
-	//000 10010 11000 10011 || 10000 00000 00000 00000 00000 00000 00000 00000 0
-	bool reducedU[59];//18+41=59
-	for (int i = 0; i < 18; i++) {
-		reducedU[i] = uv[123 + i];
-	}
-	for (int i = 18; i < 59; i++) {
-		reducedU[i] = rebeta[i - 18];
-	}
-	
-	/*bool ures[41];
-	h.c = h.c - 1;
-	cout << "h.c:" << h.c<<" h.r:"<<h.r << endl;
-	matrixMul(h, reducedU, ures);
-	h.c = h.c + 1;
-	for (int i = 0; i < h.r; i++) {
-		if(i<h.r-2)
-			cout << (ures[i] ^ h.ma[i][h.c - 1] ^ uv[i]);
-		else
-			cout << (ures[i] ^ h.ma[i][h.c - 1]);
-	}
-	cout << endl;*/
-	//the correctness of h is verified
-
-	//test the correctness of h0, h1, p1
-	//h1(rebeta) ^ p1(u1,...,u39,0,0) = cbit[1,2,3...,41]
-	bool uex[41];
-	for (int i = 0; i < 39; i++) {
-		uex[i] = uv[i];
-	}
-	uex[39] = 0, uex[40] = 0;
-	bool uexres[41];
-	matrixMul(p1, uex, uexres);
-
-	bool rebetares[41];
-	matrixMul(h1, rebeta, rebetares);
-	
-	for (int i = 18; i < 41; i++) {
-		cout << (uexres[i] ^ rebetares[i] ^ cbit[i]);
-	}
-	cout << endl;
-
-	/*for (int i = 0; i < 18; i++) {
-		//cout << (uexres[i] ^ rebetares[i] ^ cbit[i]);
-		cout << (uexres[i] ^ cbit[i]);
-	}
-	cout << endl;
-	*/
-
-	//the correctness are all verified
-
-	vector<vector<int> > Dh;
-	Dh.resize(0x800000);
-	storeSolutions(Dh,h0, h1, p1, cbit);
-
-	/*for (int i = 0; i < 141; i++) {
-		cout << uv[i];
-	}
-	cout << endl;*/
-
-	//online check for test
-	/*vector<bool> ga(N);
-	ga[0] = 0, ga[1] = 0, ga[2] = 0;
-	for (int i = 0; i < 125; i++)
-		ga[i+3] = gamma[i];
-	onlineCheck(Dh, h1, q1, gammaTr, ga);
-	*/
-
-	//store H1,Q1,gammaTr,Dh for the online check
-	DH.resize(0x800000);
-	for (int i = 0; i < DH.size(); i++) {
-		DH[i].clear();
-		for (int j = 0; j < Dh[i].size(); j++) {
-			DH[i].push_back(Dh[i][j]);
-		}
-	}
-	matrixEq(h1, H1);
-	matrixEq(q1, Q1);
-	matrixEq(gammaTr, GammaTr);
-
-	cbit.clear();
-	for (int i = 0; i < 0x800000; i++) {
-		Dh[i].clear();
-	}
-	Dh.clear();
-}
-
-void LowMC::constructPQNewWay(bool x[]) {
 	int r0 = 42;
 	int r1 = 48;
 	int r2 = 13;
@@ -842,6 +441,7 @@ void LowMC::constructPQNewWay(bool x[]) {
 		cbit[i] = p.ma[i + P0.r - 23][p.c - 1];
 	}
 
+	/*
 	bool uv[141] = {
 		1,1,0,0,1,1,0,1,0,1,1,0,0,0,0,1,0,1,0,0,1,0,0,0,1,1,1,0,0,0,0,0,0,1,0,1,1,0,1,1,0,1,0,0,1,1,1,1,1,0,1,1,0,1,1,0,0,1,0,0,1,1,0,0,1,1,1,0,0,0,0,0,0,0,1,0,0,1,1,0,1,0,1,0,0,1,1,1,1,0,1,1,0,1,0,1,0,1,1,1,0,0,1,1,1,0,1,0,0,1,0,1,0,1,0,1,0,0,0,0,0,0,0,1,1,0,1,0,1,1,0,1,0,0,0,1,1,0,0,1,0,
 	};
@@ -864,6 +464,7 @@ void LowMC::constructPQNewWay(bool x[]) {
 		cout << uvRes[i];
 	}
 	cout << endl;
+	*/
 	//the above test is passed
 
 	PP0.r = P0.r, PP0.c = P0.c + 1;
@@ -878,7 +479,7 @@ void LowMC::constructPQNewWay(bool x[]) {
 
 	vector<vector<unsigned long long> > Dh;
 	Dh.resize(0x800000);
-	storeSolutionsNewWay(Dh, P0P, cbit);
+	storeSolutions(Dh, P0P, cbit);
 
 	//store Dh
 	DH.resize(0x800000);
@@ -896,60 +497,7 @@ void LowMC::constructPQNewWay(bool x[]) {
 	Dh.clear();
 }
 
-void LowMC::storeSolutions(vector<vector<int>>& Dh, M& h0, M& h1, M& p1, vector <bool> &cbit) {
-	const int t = 13;
-	const int omega = 2;
-	const int size = 3 * t + omega;
-	bool u[size];
-	for (int i = 0; i < omega; i++)
-		u[3 * t + i] = 0;
-
-	//use p1 and cbit to precompute the right-hand of equations
-	bool uRes[size];
-	
-	//store uRes[18,19,...,40] and uRes[0,1,...,17]
-	ifstream uvalue("uvalue.txt");
-	const int DhSize = 17134432;
-	bool checkU[39] = {
-		1,1,0,0,1,1,0,1,0,1,1,0,0,0,0,1,0,1,0,0,1,0,0,0,1,1,1,0,0,0,0,0,0,1,0,1,1,0,1,
-	};
-	for (int i = 0; i < DhSize; i++) {
-		for (int j = 0; j < 39; j++) {
-			uvalue >> u[j];
-		}
-		u[39] = 0, u[40] = 0;
-		matrixMul(p1, u, uRes);
-		for (int j = 0; j < size; j++) {
-			uRes[j] = uRes[j] ^ cbit[j];
-		}
-		//store uRes[0,1,...,17] according to uRes[18,19,...,40]
-		int in = 0, res = 0;
-		for (int i = 18; i < 41; i++) {
-			in = in | (uRes[i] << (i - 18));
-		}
-		for (int i = 0; i < 18; i++) {
-			res = res | (uRes[i] << i);
-		}
-
-		Dh[in].push_back(res);
-		if (i % 0x10000 == 0) {
-			cout << hex << i <<endl;
-		}
-
-	}
-	uvalue.close();
-	cout << "contructing Dh is over" << endl;
-
-	//online phase
-	//given gamma, we compute beta->rebeta->rebetaRes=h1(rebeta)
-	//uRes[18,...,40]=rebeta[18,...,40]
-	//search table and get uRes[0,...,17]
-	//compute u123,u124,u125,...,u141 with the first 18 rows of h1
-	//compute u0,u1,u2,...u122 with transConnect
-	//overs
-}
-
-void LowMC::storeSolutionsNewWay(vector<vector<unsigned long long>>& Dh, M& P0P, vector <bool>& cbit) {
+void LowMC::storeSolutions(vector<vector<unsigned long long>>& Dh, M& P0P, vector <bool>& cbit) {
 	//need a full re-write
 	const int size = 23;
 	const int q = 3 * 13;
@@ -1017,53 +565,7 @@ void LowMC::storeSolutionsNewWay(vector<vector<unsigned long long>>& Dh, M& P0P,
 /********************************
 *the online phase
 *********************************/
-int LowMC::onlineCheck(vector<vector<int>>& Dh, M& h1, M& q1, M& gammaTr, vector<bool> &ga) {
-	//compute beta from gamma
-	bool gamma[125],beta[125];
-	for (int i = 0; i < 125; i++)
-		gamma[i] = ga[i + 3];
-	matrixMul(gammaTr, gamma, beta);
-
-	//extract from beta and get reBeta
-	bool reBeta[41];//41=3*t+omega=3*13+2
-	for (int i = 0; i < 39; i++) {
-		reBeta[i] = beta[i];
-	}
-	reBeta[39] = beta[123], reBeta[40] = beta[124];
-	//apply h1 to reBeta and get reBetaRes
-	bool reBetaRes[41];
-	matrixMul(h1, reBeta, reBetaRes);
-
-	//search the table Dh
-	int index = 0;
-	for (int i = 18; i < 41; i++) {
-		index = index | (reBetaRes[i] << (i - 18));
-	}
-	
-	//retrieve the elements in Dh[index]
-	bool ul[18];
-	bool uf[123];
-	bool uRes[18];
-	return Dh[index].size();
-	//cout << "size:" << Dh[index].size() << endl;
-	/*for (int i = 0; i < Dh[index].size(); i++) {
-		//get uRes[0,1,2,...17] 
-		//compute u123,u124,u125,...,u141 with the first 18 rows of h1
-		for (int j = 0; j < 18; j++) {
-			uRes[j] = (Dh[index][i] >> j) & 0x1;
-			ul[j] = uRes[j]^reBetaRes[j];
-		}
-		//compute u0,u1,...,u122 with transConnect
-		q1.c = q1.c - 1;
-		matrixMul(q1, ul, uf);
-		q1.c = q1.c + 1;
-		for (int j = 0; j < 123; j++)
-			uf[j] = uf[j] ^ q1.ma[j][q1.c - 1]^beta[j];
-		//uf||ul is the to-be-recovered variables
-	}*/
-}
-
-int LowMC::onlineCheckNewWay(vector<vector<unsigned long long>>& Dh, M& Q1, M& P0, vector<bool>& ga) {
+int LowMC::onlineCheck(vector<vector<unsigned long long>>& Dh, M& Q1, M& P0, vector<bool>& ga) {
 	//compute beta from gamma
 	bool gamma[125], beta[125];
 	for (int i = 0; i < 125; i++)
@@ -1075,7 +577,7 @@ int LowMC::onlineCheckNewWay(vector<vector<unsigned long long>>& Dh, M& Q1, M& P
 		index = index | (beta[i] << (i - (125 - 23)));
 	}
 
-	////////////////////////used to test whether the desired trail is in the solution
+	/*///////////////////////used for test (may not correct for the current configurations)
 	bool ul[40];////39+1=40, u[39] used for the constant bit (episilon)
 	for (int i = 0; i < Dh[index].size(); i++) {
 		for (int j = 0; j < 39; j++) {
@@ -1130,8 +632,8 @@ int LowMC::onlineCheckNewWay(vector<vector<unsigned long long>>& Dh, M& Q1, M& P
 			}
 		}
 	}
-	/////////////////////////////////////////
-
+	*/////////////////////////////////////////
+	
 	return Dh[index].size();
 }
 
